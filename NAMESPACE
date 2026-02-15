@@ -1,1 +1,4 @@
+export(check_package_parse_data)
 export(impute_srcrefs)
+export(impute_package_srcrefs)
+export(source_impute_srcrefs)

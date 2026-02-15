@@ -1,7 +1,3 @@
-`%||%` <- function(x, y) {
-  if (is.null(x)) y else x
-}
-
 is_call_named <- function(expr, name) {
   is.call(expr) && is.symbol(expr[[1]]) && identical(as.character(expr[[1]]), name)
 }
@@ -21,6 +17,9 @@ is_logical_op_call <- function(expr) {
 }
 
 expr_children <- function(node_id, ctx) {
+  # `node_id` is an `expr` row id from parse data. This returns child `expr`
+  # node ids in source order so AST argument positions can be mapped to parse
+  # ranges deterministically.
   rows <- ctx$expr[ctx$expr$parent == node_id, , drop = FALSE]
   if (nrow(rows) == 0L) {
     return(integer())
@@ -31,6 +30,9 @@ expr_children <- function(node_id, ctx) {
 }
 
 node_srcref <- function(node_id, ctx) {
+  # Build an srcref from parse-data coordinates for a single expression node.
+  # The offsets are needed because parsed text can start at a non-1 line/column
+  # inside the original source file.
   row <- ctx$expr_index[[as.character(node_id)]]
   if (is.null(row)) {
     stop(sprintf("Missing parse node id %s", node_id), call. = FALSE)
@@ -49,6 +51,8 @@ node_srcref <- function(node_id, ctx) {
 }
 
 wrap_with_transparent_brace <- function(expr, sr) {
+  # Transparent wrapper: both srcref entries point to the wrapped expression
+  # span, making injected braces source-invisible for mapping purposes.
   out <- call("{", expr)
   attr(out, "srcref") <- list(sr, sr)
   out
@@ -59,6 +63,17 @@ source_text_from_srcref <- function(fn) {
 
   # Fallback for functions that do not carry srcref metadata.
   if (is.null(sr)) {
+    if (!isTRUE(getOption("srcrefimpute.allow_deparse_fallback", FALSE))) {
+      stop(
+        paste(
+          "Function has no srcref metadata.",
+          "Set options(srcrefimpute.allow_deparse_fallback = TRUE)",
+          "to enable deparse-based fallback."
+        ),
+        call. = FALSE
+      )
+    }
+
     txt <- paste(deparse(fn, width.cutoff = 500L), collapse = "\n")
     return(list(
       text = txt,
@@ -86,6 +101,8 @@ source_text_from_srcref <- function(fn) {
   }
 
   list(
+    # `text` is what we parse to obtain getParseData(); offsets map parse
+    # coordinates back to the original source file coordinates.
     text = paste(lines, collapse = "\n"),
     srcfile = srcfile,
     line_offset = sr[1] - 1L,
@@ -132,11 +149,27 @@ rebuild_call <- function(parts, template) {
 }
 
 transform_expr <- function(expr, node_id, ctx) {
+  # Core imputation walker.
+  #
+  # - `expr`: current language object (AST node).
+  # - `node_id`: parse-data `expr` id corresponding to `expr`.
+  # - `ctx`: parse-data context with:
+  #     * `pd`: full parse table.
+  #     * `expr`: parse rows where token == "expr".
+  #     * `expr_index`: fast lookup from expr id -> row.
+  #     * `srcfile`, `line_offset`, `first_col_offset`: srcref reconstruction
+  #       metadata.
+  #
+  # The recursion keeps AST and parse tree aligned. Whenever a target slot is
+  # not already `{ ... }`, we inject a brace call and impute its srcref from the
+  # corresponding parse-data node.
   if (!is.call(expr)) {
     return(expr)
   }
 
   if (is_braced(expr) && !node_has_token(node_id, "'{'", ctx)) {
+    # Already-injected transparent braces may not exist in original parse data.
+    # Recurse into the child with the same node_id and preserve brace srcref.
     parts <- as.list(expr)
     sr <- attr(expr, "srcref", exact = TRUE)
 
@@ -156,6 +189,7 @@ transform_expr <- function(expr, node_id, ctx) {
   child_ids <- expr_children(node_id, ctx)
 
   recurse_slot <- function(i, child_id, wrap = FALSE) {
+    # Helper for "recurse into slot i, then optionally brace-wrap and impute".
     value <- transform_expr(parts[[i]], child_id, ctx)
     if (wrap && !is_braced(value)) {
       value <- wrap_with_transparent_brace(value, node_srcref(child_id, ctx))
@@ -238,6 +272,9 @@ transform_expr <- function(expr, node_id, ctx) {
   }
 
   if (identical(op, "for")) {
+    # Parse data represents `for (...)` sequence under a dedicated `forcond`
+    # subtree, so we fetch that expr id explicitly instead of relying only on
+    # direct child expr ids.
     forcond <- ctx$pd[ctx$pd$parent == node_id & ctx$pd$token == "forcond", , drop = FALSE]
     seq_id <- integer()
     if (nrow(forcond) == 1L) {
@@ -322,15 +359,40 @@ transform_expr <- function(expr, node_id, ctx) {
 
 #' Impute srcrefs for missing control-flow braces in a function AST.
 #'
+#' Traverses a function's AST and wraps unbraced expressions in control-flow
+#' positions with `{ ... }` while attaching transparent srcrefs to the injected
+#' brace calls. The srcref assigned to an injected brace matches the span of the
+#' wrapped expression so that source mapping stays aligned with original code.
+#'
+#' Covered constructs include:
+#' - `if` / `else`
+#' - `for`, `while`, `repeat`
+#' - `switch`
+#' - logical operators (`&&`, `||`, `&`, `|`)
+#' - function defaults and function bodies
+#'
 #' @param fn A function.
 #'
-#' @return A function with injected transparent brace calls carrying srcrefs.
+#' @return A function with transformed body/formals and preserved function-level
+#'   attributes (including srcref/srcfile metadata when present).
+#'
+#' @details
+#' For functions without srcref metadata, deparse-based fallback is disabled by
+#' default. To allow fallback, set
+#' `options(srcrefimpute.allow_deparse_fallback = TRUE)`.
+#'
+#' @examples
+#' options(keep.source = TRUE)
+#' f <- eval(parse(text = "function(x, y) if (x && y) f() else g()", keep.source = TRUE)[[1]])
+#' g <- impute_srcrefs(f)
+#' g
 #' @export
 impute_srcrefs <- function(fn) {
   if (!is.function(fn)) {
     stop("`fn` must be a function", call. = FALSE)
   }
 
+  fn_attrs <- attributes(fn)
   src <- source_text_from_srcref(fn)
   parsed <- parse(text = src$text, keep.source = TRUE)
   pd <- getParseData(parsed)
@@ -351,6 +413,7 @@ impute_srcrefs <- function(fn) {
 
   root_id <- root_rows$id[[1L]]
 
+  # Shared parse context used by the recursive walker.
   ctx <- list(
     pd = pd,
     expr = expr_rows,
@@ -361,10 +424,18 @@ impute_srcrefs <- function(fn) {
   )
 
   fn_expr <- as.call(list(as.name("function"), formals(fn), body(fn)))
+  # Start traversal from the top-level function expression parse node.
   transformed <- transform_expr(fn_expr, root_id, ctx)
 
   out <- fn
   formals(out) <- transformed[[2L]]
   body(out) <- transformed[[3L]]
+
+  if (!is.null(fn_attrs)) {
+    for (nm in names(fn_attrs)) {
+      attr(out, nm) <- fn_attrs[[nm]]
+    }
+  }
+
   out
 }
