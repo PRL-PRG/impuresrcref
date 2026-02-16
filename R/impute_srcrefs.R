@@ -63,11 +63,11 @@ source_text_from_srcref <- function(fn) {
 
   # Fallback for functions that do not carry srcref metadata.
   if (is.null(sr)) {
-    if (!isTRUE(getOption("srcrefimpute.allow_deparse_fallback", FALSE))) {
+    if (!isTRUE(getOption("impuresrcref.allow_deparse_fallback", FALSE))) {
       stop(
         paste(
           "Function has no srcref metadata.",
-          "Set options(srcrefimpute.allow_deparse_fallback = TRUE)",
+          "Set options(impuresrcref.allow_deparse_fallback = TRUE)",
           "to enable deparse-based fallback."
         ),
         call. = FALSE
@@ -379,7 +379,7 @@ transform_expr <- function(expr, node_id, ctx) {
 #' @details
 #' For functions without srcref metadata, deparse-based fallback is disabled by
 #' default. To allow fallback, set
-#' `options(srcrefimpute.allow_deparse_fallback = TRUE)`.
+#' `options(impuresrcref.allow_deparse_fallback = TRUE)`.
 #'
 #' @examples
 #' options(keep.source = TRUE)

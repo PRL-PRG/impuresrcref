@@ -1,6 +1,17 @@
-# srcrefimpute
+# impuresrcref
 
-`srcrefimpute` imputes transparent `srcref` metadata for injected brace calls (`{`) in R function ASTs.
+`impuresrcref` imputes transparent `srcref` metadata for injected brace calls (`{`) in R function ASTs.
+
+## srcref primer
+
+In R, a [`srcref`](https://stat.ethz.ch/R-manual/R-devel/library/base/html/srcfile.html) is source-location metadata (line/column ranges) attached to
+parsed objects when source retention is enabled (for example with
+`options(keep.source = TRUE)`).
+This package solves a finer-grained mapping problem for control-flow
+expressions written without braces (for example `if (x) f() else g()`). It
+adds transparent wrappers and imputes srcrefs from parse data so individual
+control-flow components can be mapped to source precisely.
+It uses the parser token tables [`getParseData`](https://stat.ethz.ch/R-manual/R-devel/library/utils/html/getParseData.html) for it.
 
 ## What it does
 
@@ -77,7 +88,7 @@ If parse data is missing, `impute_package_srcrefs()` prints an install command a
 For functions created without srcrefs, opt into deparse-based fallback explicitly:
 
 ```r
-options(srcrefimpute.allow_deparse_fallback = TRUE)
+options(impuresrcref.allow_deparse_fallback = TRUE)
 ```
 
 ## Tests
@@ -97,3 +108,7 @@ UPDATE_SNAPSHOTS=1 Rscript tests/test-srcref-imputation.R
 
 By default, mismatches fail. With `UPDATE_SNAPSHOTS=1`, the snapshot file is rewritten.
 Legacy `--update` is still accepted for compatibility.
+
+## Acknowledgements
+
+This package was inspired in part by [covr](https://covr.r-lib.org/)'s parse-data handling [approach](https://github.com/r-lib/covr/blob/f1866d296c00884d1f085ff245669de01bc864c4/R/parse_data.R).

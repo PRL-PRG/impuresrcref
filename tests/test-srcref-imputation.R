@@ -145,9 +145,9 @@ render_no_srcref_fallback_case <- function() {
     envir = new.env(parent = baseenv())
   )
 
-  old_opt <- getOption("srcrefimpute.allow_deparse_fallback")
-  on.exit(options(srcrefimpute.allow_deparse_fallback = old_opt), add = TRUE)
-  options(srcrefimpute.allow_deparse_fallback = FALSE)
+  old_opt <- getOption("impuresrcref.allow_deparse_fallback")
+  on.exit(options(impuresrcref.allow_deparse_fallback = old_opt), add = TRUE)
+  options(impuresrcref.allow_deparse_fallback = FALSE)
   err <- tryCatch(
     {
       impute_srcrefs(fn)
@@ -157,9 +157,9 @@ render_no_srcref_fallback_case <- function() {
   )
 
   blocked <- inherits(err, "error") &&
-    grepl("srcrefimpute.allow_deparse_fallback", conditionMessage(err), fixed = TRUE)
+    grepl("impuresrcref.allow_deparse_fallback", conditionMessage(err), fixed = TRUE)
 
-  options(srcrefimpute.allow_deparse_fallback = TRUE)
+  options(impuresrcref.allow_deparse_fallback = TRUE)
   out <- impute_srcrefs(fn)
   checks <- assert_transparent_srcref_consistency(out)
 
