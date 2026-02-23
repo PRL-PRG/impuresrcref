@@ -88,16 +88,65 @@ source_text_from_srcref <- function(fn) {
     stop("Function srcref is missing srcfile", call. = FALSE)
   }
 
-  lines <- getSrcLines(srcfile, sr[1], sr[3])
-  if (length(lines) == 0L) {
+  sr <- as.integer(sr)
+
+  # For installed package functions with preserved parse data, srcref often
+  # stores parse-table line span in slots 7/8 while slots 1/3 are remapped by
+  # #line directives. Try parsed span first, then fall back.
+  candidates <- list(
+    c(sr[7], sr[8], sr[5], sr[6]),
+    c(sr[1], sr[3], sr[5], sr[6]),
+    c(sr[1], sr[3], sr[2], sr[4])
+  )
+
+  chosen <- NULL
+  lines <- character()
+
+  for (cand in candidates) {
+    if (length(cand) != 4L || any(is.na(cand)) || any(cand <= 0L)) {
+      next
+    }
+
+    start_line <- cand[[1L]]
+    end_line <- cand[[2L]]
+    start_col <- cand[[3L]]
+    end_col <- cand[[4L]]
+
+    if (end_line < start_line) {
+      next
+    }
+    if (end_line == start_line && end_col < start_col) {
+      next
+    }
+
+    attempt <- tryCatch(
+      getSrcLines(srcfile, start_line, end_line),
+      error = function(e) character()
+    )
+
+    if (length(attempt) == 0L) {
+      next
+    }
+
+    chosen <- list(
+      start_line = start_line,
+      end_line = end_line,
+      start_col = start_col,
+      end_col = end_col
+    )
+    lines <- attempt
+    break
+  }
+
+  if (is.null(chosen) || length(lines) == 0L) {
     stop("Could not read source lines for function", call. = FALSE)
   }
 
   if (length(lines) == 1L) {
-    lines[1] <- substr(lines[1], sr[2], sr[4])
+    lines[1] <- substr(lines[1], chosen$start_col, chosen$end_col)
   } else {
-    lines[1] <- substr(lines[1], sr[2], nchar(lines[1]))
-    lines[length(lines)] <- substr(lines[length(lines)], 1L, sr[4])
+    lines[1] <- substr(lines[1], chosen$start_col, nchar(lines[1]))
+    lines[length(lines)] <- substr(lines[length(lines)], 1L, chosen$end_col)
   }
 
   list(
@@ -105,8 +154,8 @@ source_text_from_srcref <- function(fn) {
     # coordinates back to the original source file coordinates.
     text = paste(lines, collapse = "\n"),
     srcfile = srcfile,
-    line_offset = sr[1] - 1L,
-    first_col_offset = sr[2] - 1L
+    line_offset = chosen$start_line - 1L,
+    first_col_offset = chosen$start_col - 1L
   )
 }
 
@@ -148,6 +197,12 @@ rebuild_call <- function(parts, template) {
   out
 }
 
+set_element <- function(x, i, value) {
+  # Preserve explicit NULL arguments/defaults. `[[<- NULL` deletes an element.
+  x[i] <- list(value)
+  x
+}
+
 transform_expr <- function(expr, node_id, ctx) {
   # Core imputation walker.
   #
@@ -174,7 +229,7 @@ transform_expr <- function(expr, node_id, ctx) {
     sr <- attr(expr, "srcref", exact = TRUE)
 
     if (length(parts) >= 2L) {
-      parts[[2L]] <- transform_expr(parts[[2L]], node_id, ctx)
+      parts <- set_element(parts, 2L, transform_expr(parts[[2L]], node_id, ctx))
     }
 
     out <- rebuild_call(parts, expr)
@@ -194,7 +249,7 @@ transform_expr <- function(expr, node_id, ctx) {
     if (wrap && !is_braced(value)) {
       value <- wrap_with_transparent_brace(value, node_srcref(child_id, ctx))
     }
-    parts[[i]] <<- value
+    parts <<- set_element(parts, i, value)
   }
 
   if (identical(op, "function")) {
@@ -219,7 +274,7 @@ transform_expr <- function(expr, node_id, ctx) {
       if (!is_braced(val)) {
         val <- wrap_with_transparent_brace(val, node_srcref(cid, ctx))
       }
-      fmls[[idx]] <- val
+      fmls <- set_element(fmls, idx, val)
     }
 
     if (cursor > length(child_ids)) {
@@ -232,21 +287,43 @@ transform_expr <- function(expr, node_id, ctx) {
       body_expr <- wrap_with_transparent_brace(body_expr, node_srcref(body_id, ctx))
     }
 
-    parts[[2]] <- fmls
-    parts[[3]] <- body_expr
+    if (is.null(fmls)) {
+      # `function()` stores formals as NULL. Preserve that slot explicitly,
+      # because `parts[[2]] <- NULL` would delete the element.
+      out <- as.call(list(as.name("function"), NULL, body_expr))
+      attrs <- attributes(expr)
+      if (!is.null(attrs)) {
+        attributes(out) <- attrs
+      }
+      return(out)
+    }
+
+    parts <- set_element(parts, 2L, fmls)
+    parts <- set_element(parts, 3L, body_expr)
     return(rebuild_call(parts, expr))
   }
 
   if (identical(op, "if")) {
     if (length(child_ids) < 2L) {
-      stop("Parse mapping mismatch for if expression", call. = FALSE)
+      # Some package parse tables do not expose expected `if` child expr nodes.
+      # Fall back to structural recursion without additional brace imputation.
+      if (length(parts) >= 2L) {
+        parts <- set_element(parts, 2L, transform_expr(parts[[2L]], node_id, ctx))
+      }
+      if (length(parts) >= 3L) {
+        parts <- set_element(parts, 3L, transform_expr(parts[[3L]], node_id, ctx))
+      }
+      if (length(parts) >= 4L) {
+        parts <- set_element(parts, 4L, transform_expr(parts[[4L]], node_id, ctx))
+      }
+      return(rebuild_call(parts, expr))
     }
 
     cond <- transform_expr(parts[[2L]], child_ids[[1L]], ctx)
     if (!is_braced(cond) && !is_logical_op_call(cond)) {
       cond <- wrap_with_transparent_brace(cond, node_srcref(child_ids[[1L]], ctx))
     }
-    parts[[2L]] <- cond
+    parts <- set_element(parts, 2L, cond)
 
     recurse_slot(3L, child_ids[[2L]], wrap = TRUE)
     if (length(parts) >= 4L && length(child_ids) >= 3L) {
@@ -265,7 +342,7 @@ transform_expr <- function(expr, node_id, ctx) {
     if (!is_braced(cond) && !is_logical_op_call(cond)) {
       cond <- wrap_with_transparent_brace(cond, node_srcref(child_ids[[1L]], ctx))
     }
-    parts[[2L]] <- cond
+    parts <- set_element(parts, 2L, cond)
 
     recurse_slot(3L, child_ids[[2L]], wrap = TRUE)
     return(rebuild_call(parts, expr))
@@ -351,7 +428,7 @@ transform_expr <- function(expr, node_id, ctx) {
   for (k in seq_along(mapping$indices)) {
     i <- mapping$indices[[k]]
     cid <- mapping$ids[[k]]
-    parts[[i]] <- transform_expr(parts[[i]], cid, ctx)
+    parts <- set_element(parts, i, transform_expr(parts[[i]], cid, ctx))
   }
 
   rebuild_call(parts, expr)
@@ -428,7 +505,10 @@ impute_srcrefs <- function(fn) {
   transformed <- transform_expr(fn_expr, root_id, ctx)
 
   out <- fn
-  formals(out) <- transformed[[2L]]
+  transformed_formals <- transformed[[2L]]
+  if (!is.null(transformed_formals)) {
+    formals(out) <- transformed_formals
+  }
   body(out) <- transformed[[3L]]
 
   if (!is.null(fn_attrs)) {

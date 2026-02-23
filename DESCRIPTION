@@ -3,10 +3,14 @@ Type: Package
 Title: Impute Transparent Source References for Injected Braces
 Version: 0.0.0.9000
 Authors@R: person("Filip", "Krikava", role = c("aut", "cre"), email = "krikava@gmail.com")
-Description: Imputes source references for injected brace calls when rewriting
-    control-flow expressions in R functions.
+Author: Filip Krikava [aut, cre]
+Maintainer: Filip Krikava <krikava@gmail.com>
+Description: Rewrites R function ASTs by injecting transparent brace calls in
+    control-flow positions and imputing source references ('srcref') from parse
+    data. Supports individual functions, sourced files, and installed package
+    namespace functions, including package-style 'srcref' line mappings.
+Suggests: ggplot2
 License: MIT + file LICENSE
 Encoding: UTF-8
-LazyData: true
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3

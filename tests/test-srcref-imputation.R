@@ -7,8 +7,12 @@ script_arg <- grep("^--file=", full_args, value = TRUE)
 
 if (length(script_arg) == 1L) {
   script_path <- normalizePath(sub("^--file=", "", script_arg), mustWork = TRUE)
-} else {
+} else if (file.exists("tests/test-srcref-imputation.R")) {
   script_path <- normalizePath("tests/test-srcref-imputation.R", mustWork = TRUE)
+} else if (file.exists("test-srcref-imputation.R")) {
+  script_path <- normalizePath("test-srcref-imputation.R", mustWork = TRUE)
+} else {
+  stop("Could not locate test-srcref-imputation.R", call. = FALSE)
 }
 
 test_dir <- dirname(script_path)
@@ -16,8 +20,18 @@ pkg_root <- dirname(test_dir)
 
 r_files <- list.files(file.path(pkg_root, "R"), pattern = "\\.[Rr]$", full.names = TRUE)
 r_files <- sort(r_files)
-for (f in r_files) {
-  source(f, local = .GlobalEnv)
+if (length(r_files) > 0L) {
+  for (f in r_files) {
+    source(f, local = .GlobalEnv)
+  }
+} else {
+  # Installed-package test context (e.g. R CMD check) does not expose source
+  # files under ./R, so access public and internal symbols from namespace.
+  impute_srcrefs <- impuresrcref::impute_srcrefs
+  source_impute_srcrefs <- impuresrcref::source_impute_srcrefs
+  impute_package_srcrefs <- impuresrcref::impute_package_srcrefs
+  collect_srcref_sites <- impuresrcref:::collect_srcref_sites
+  assert_transparent_srcref_consistency <- impuresrcref:::assert_transparent_srcref_consistency
 }
 
 make_fn <- function(code) {
@@ -44,6 +58,10 @@ cases <- list(
   list(
     name = "already-braced",
     code = "function(x, y) { if ({x} && {y}) {f()} else {g()} }"
+  ),
+  list(
+    name = "null-args-preserved",
+    code = "function() { f(NULL, if (x) y else z, NULL, if (p) q else r, NULL) }"
   )
 )
 
@@ -124,13 +142,65 @@ render_source_case <- function() {
 
 actual <- c(actual, render_source_case())
 
+render_package_like_srcref_case <- function() {
+  txt <- paste(
+    c(
+      "# preamble",
+      "#line 100 \"pkg/file.R\"",
+      "f <- function(x, y) if (x && y) f() else g()"
+    ),
+    collapse = "\n"
+  )
+
+  env <- new.env(parent = baseenv())
+  expr <- parse(text = txt, keep.source = TRUE)
+  eval(expr, envir = env)
+
+  fn <- env$f
+  sr <- attr(fn, "srcref", exact = TRUE)
+  out <- impute_srcrefs(fn)
+  checks <- assert_transparent_srcref_consistency(out)
+
+  c(
+    "=== package-like-srcref ===",
+    sprintf("sr_slots_1_3=%d-%d", sr[[1L]], sr[[3L]]),
+    sprintf("sr_slots_7_8=%d-%d", sr[[7L]], sr[[8L]]),
+    sprintf("transparent_checks=%d", checks$checked),
+    sprintf("transparent_checks_ok=%s", checks$ok),
+    collect_srcref_sites(out),
+    checks$lines,
+    ""
+  )
+}
+
+actual <- c(actual, render_package_like_srcref_case())
+
+render_zero_formals_case <- function() {
+  fn <- make_fn("function() if (TRUE) f() else g()")
+  one <- impute_srcrefs(fn)
+  two <- impute_srcrefs(one)
+  checks <- assert_transparent_srcref_consistency(one)
+  idempotent <- identical(body(one), body(two)) && identical(formals(one), formals(two))
+
+  c(
+    "=== zero-formals ===",
+    sprintf("formals_is_null=%s", is.null(formals(one))),
+    sprintf("idempotent=%s", idempotent),
+    sprintf("transparent_checks=%d", checks$checked),
+    sprintf("transparent_checks_ok=%s", checks$ok),
+    collect_srcref_sites(one),
+    checks$lines,
+    ""
+  )
+}
+
+actual <- c(actual, render_zero_formals_case())
+
 render_package_case <- function() {
-  chk <- check_package_parse_data("base", include_internal = FALSE)
-  run <- impute_package_srcrefs("base", include_internal = FALSE, prompt_install = FALSE, verbose = FALSE)
+  run <- impute_package_srcrefs("base", include_internal = FALSE, verbose = FALSE)
 
   c(
     "=== package-base ===",
-    sprintf("has_parse_data=%s", chk$has_parse_data),
     sprintf("patched_count=%d", run$patched_count),
     sprintf("install_command=%s", run$install_command),
     ""

@@ -1,0 +1,74 @@
+name: Test Package
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  build_image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: image
+        run: |
+          echo "image=ghcr.io/${{ github.repository_owner }}/impuresrcref-r-ci:sha-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .github/docker/r-ci
+          file: .github/docker/r-ci/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image.outputs.image }}
+            ghcr.io/${{ github.repository_owner }}/impuresrcref-r-ci:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  test:
+    needs: build_image
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.build_image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show R session
+        run: Rscript -e 'sessionInfo()'
+
+      - name: Install package
+        run: R CMD INSTALL .
+
+      - name: Run snapshot tests
+        run: Rscript tests/test-srcref-imputation.R
+
+      - name: Run full package test (preinstalled ggplot2)
+        env:
+          FULL_TEST: "1"
+        run: Rscript tests/test-package-srcref-imputation.R
+
+      - name: Run check
+        run: R CMD check --no-manual .

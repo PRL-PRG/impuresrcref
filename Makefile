@@ -1,6 +1,6 @@
-R ?= R
-RSCRIPT ?= Rscript
-TEST_SCRIPT := tests/test-srcref-imputation.R
+R = R
+RSCRIPT = Rscript
+TEST_SCRIPT = tests/test-srcref-imputation.R
 
 .PHONY: install test clean
 

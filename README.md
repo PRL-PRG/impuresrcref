@@ -35,22 +35,18 @@ and assigns srcrefs to injected `{` calls using parse-data-derived source spans.
   - Impute missing control-flow braces and transparent srcrefs for one function.
 - `source_impute_srcrefs(file, envir = parent.frame(), ...)`
   - Source an R file and patch all changed/new functions in the target environment.
-- `check_package_parse_data(package, include_internal = TRUE)`
-  - Check whether installed package functions carry parse data.
 - `impute_package_srcrefs(package, include_internal = TRUE, ...)`
-  - Patch package functions if parse data is available
+  - Patch package namespace functions if parse data is available
 
 ## Important: package installs and parse data
 
-For installed packages, parse data is often missing unless the package was installed from source with package source options enabled.
+For installed packages, parse data is often missing unless the package was
+installed from source with source/parse retention enabled.
 
 Recommended installation pattern:
 
 ```r
-local({
-  options(keep.source.pkgs = TRUE, keep.parse.data.pkgs = TRUE)
-  install.packages("MASS", type = "source")
-})
+    install.packages("<package>", INSTALL_opts=c("--with-keep.source", "--with-keep.parse.data"))
 ```
 
 ## Usage
@@ -72,15 +68,21 @@ res <- source_impute_srcrefs("path/to/file.R", envir = env)
 res$functions
 ```
 
-### Check and patch an installed package
+### Patch an installed package
 
 ```r
-check_package_parse_data("MASS")
-res <- impute_package_srcrefs("MASS")
+res <- impute_package_srcrefs("stringr", include_internal = TRUE)
 res$patched_count
+head(res$failed[!is.na(res$failed)])
 ```
 
-If parse data is missing, `impute_package_srcrefs()` prints an install command and returns without patching.
+Returned fields are:
+
+- `package`
+- `fn_names`
+- `failed` (`NA` means successfully patched)
+- `patched_count`
+- `install_command` (reinstall hint when nothing could be patched)
 
 ### Functions without srcref metadata
 
@@ -94,6 +96,10 @@ options(impuresrcref.allow_deparse_fallback = TRUE)
 ## Tests
 
 Snapshot tests compare generated output against committed `.out` golden files.
+They include regression coverage for:
+
+- package-style `srcref` line mappings (`sr[7:8]` vs `sr[1:3]`)
+- zero-formals functions (`function()`)
 Run tests in compare mode:
 
 ```r

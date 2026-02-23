@@ -87,6 +87,24 @@ path=body/2/2/3 node={ y } sr1=(1,29,1,29,29,29,1,1) sr2=(1,30,1,30,30,30,1,1)
 path=body/2/3 node={ f() } sr1=(1,34,1,34,34,34,1,1) sr2=(1,35,1,37,35,37,1,1)
 path=body/2/4 node={ g() } sr1=(1,45,1,45,45,45,1,1) sr2=(1,46,1,48,46,48,1,1)
 
+=== null-args-preserved ===
+idempotent=TRUE
+transparent_checks=6
+transparent_checks_ok=TRUE
+path=body node={ f(NULL, if ({ x }) { y } else { z }, NULL, if ({ p }) { q } else { r }, NULL) } sr1=(1,12,1,12,12,12,1,1) sr2=(1,14,1,66,14,66,1,1)
+path=body/2/3/2 node={ x } sr1=(1,26,1,26,26,26,1,1) sr2=(1,26,1,26,26,26,1,1)
+path=body/2/3/3 node={ y } sr1=(1,29,1,29,29,29,1,1) sr2=(1,29,1,29,29,29,1,1)
+path=body/2/3/4 node={ z } sr1=(1,36,1,36,36,36,1,1) sr2=(1,36,1,36,36,36,1,1)
+path=body/2/5/2 node={ p } sr1=(1,49,1,49,49,49,1,1) sr2=(1,49,1,49,49,49,1,1)
+path=body/2/5/3 node={ q } sr1=(1,52,1,52,52,52,1,1) sr2=(1,52,1,52,52,52,1,1)
+path=body/2/5/4 node={ r } sr1=(1,59,1,59,59,59,1,1) sr2=(1,59,1,59,59,59,1,1)
+check path=body/2/3/2 ok=TRUE sr_text="x" expr_text="x"
+check path=body/2/3/3 ok=TRUE sr_text="y" expr_text="y"
+check path=body/2/3/4 ok=TRUE sr_text="z" expr_text="z"
+check path=body/2/5/2 ok=TRUE sr_text="p" expr_text="p"
+check path=body/2/5/3 ok=TRUE sr_text="q" expr_text="q"
+check path=body/2/5/4 ok=TRUE sr_text="r" expr_text="r"
+
 === source-file ===
 count=2
 functions=f1,f2
@@ -119,10 +137,38 @@ check path=body ok=TRUE sr_text="while (a) h()" expr_text="while (a) h()"
 check path=body/2/2 ok=TRUE sr_text="a" expr_text="a"
 check path=body/2/3 ok=TRUE sr_text="h()" expr_text="h()"
 
+=== package-like-srcref ===
+sr_slots_1_3=100-100
+sr_slots_7_8=3-3
+transparent_checks=5
+transparent_checks_ok=TRUE
+path=body node={ if ({ x } && { y }) { f() } else { g() } } sr1=(3,21,3,44,21,44,3,3) sr2=(3,21,3,44,21,44,3,3)
+path=body/2/2/2 node={ x } sr1=(3,25,3,25,25,25,3,3) sr2=(3,25,3,25,25,25,3,3)
+path=body/2/2/3 node={ y } sr1=(3,30,3,30,30,30,3,3) sr2=(3,30,3,30,30,30,3,3)
+path=body/2/3 node={ f() } sr1=(3,33,3,35,33,35,3,3) sr2=(3,33,3,35,33,35,3,3)
+path=body/2/4 node={ g() } sr1=(3,42,3,44,42,44,3,3) sr2=(3,42,3,44,42,44,3,3)
+check path=body ok=TRUE sr_text="if (x && y) f() else g()" expr_text="if (x && y) f() else g()"
+check path=body/2/2/2 ok=TRUE sr_text="x" expr_text="x"
+check path=body/2/2/3 ok=TRUE sr_text="y" expr_text="y"
+check path=body/2/3 ok=TRUE sr_text="f()" expr_text="f()"
+check path=body/2/4 ok=TRUE sr_text="g()" expr_text="g()"
+
+=== zero-formals ===
+formals_is_null=TRUE
+idempotent=TRUE
+transparent_checks=4
+transparent_checks_ok=TRUE
+path=body node={ if ({ TRUE }) { f() } else { g() } } sr1=(1,12,1,33,12,33,1,1) sr2=(1,12,1,33,12,33,1,1)
+path=body/2/2 node={ TRUE } sr1=(1,16,1,19,16,19,1,1) sr2=(1,16,1,19,16,19,1,1)
+path=body/2/3 node={ f() } sr1=(1,22,1,24,22,24,1,1) sr2=(1,22,1,24,22,24,1,1)
+path=body/2/4 node={ g() } sr1=(1,31,1,33,31,33,1,1) sr2=(1,31,1,33,31,33,1,1)
+check path=body ok=TRUE sr_text="if (TRUE) f() else g()" expr_text="if (TRUE) f() else g()"
+check path=body/2/2 ok=TRUE sr_text="TRUE" expr_text="TRUE"
+check path=body/2/3 ok=TRUE sr_text="f()" expr_text="f()"
+check path=body/2/4 ok=TRUE sr_text="g()" expr_text="g()"
+
 === package-base ===
-has_parse_data=FALSE
 patched_count=0
-install_command=local({ options(keep.source.pkgs = TRUE, keep.parse.data.pkgs = TRUE); install.packages("base", type = "source") })
 
 === no-srcref-fallback ===
 default_blocked=TRUE
