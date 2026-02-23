@@ -32,7 +32,10 @@ jobs:
 
       - id: image
         run: |
-          echo "image=ghcr.io/${{ github.repository_owner }}/impuresrcref-r-ci:sha-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
+          image_repo="ghcr.io/${owner_lc}/impuresrcref-r-ci"
+          echo "image=${image_repo}:sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image_repo=${image_repo}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/build-push-action@v6
         with:
@@ -41,7 +44,7 @@ jobs:
           push: true
           tags: |
             ${{ steps.image.outputs.image }}
-            ghcr.io/${{ github.repository_owner }}/impuresrcref-r-ci:latest
+            ${{ steps.image.outputs.image_repo }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
