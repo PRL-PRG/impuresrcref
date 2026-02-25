@@ -1,44 +1,10 @@
-#!/usr/bin/env Rscript
 options(keep.source = TRUE)
-
-cmd_args <- commandArgs(trailingOnly = TRUE)
-full_args <- commandArgs()
-script_arg <- grep("^--file=", full_args, value = TRUE)
-
-if (length(script_arg) == 1L) {
-  script_path <- normalizePath(sub("^--file=", "", script_arg), mustWork = TRUE)
-} else if (file.exists("tests/test-srcref-imputation.R")) {
-  script_path <- normalizePath("tests/test-srcref-imputation.R", mustWork = TRUE)
-} else if (file.exists("test-srcref-imputation.R")) {
-  script_path <- normalizePath("test-srcref-imputation.R", mustWork = TRUE)
-} else {
-  stop("Could not locate test-srcref-imputation.R", call. = FALSE)
-}
-
-test_dir <- dirname(script_path)
-pkg_root <- dirname(test_dir)
-
-r_files <- list.files(file.path(pkg_root, "R"), pattern = "\\.[Rr]$", full.names = TRUE)
-r_files <- sort(r_files)
-if (length(r_files) > 0L) {
-  for (f in r_files) {
-    source(f, local = .GlobalEnv)
-  }
-} else {
-  # Installed-package test context (e.g. R CMD check) does not expose source
-  # files under ./R, so access public and internal symbols from namespace.
-  impute_srcrefs <- impuresrcref::impute_srcrefs
-  source_impute_srcrefs <- impuresrcref::source_impute_srcrefs
-  impute_package_srcrefs <- impuresrcref::impute_package_srcrefs
-  collect_srcref_sites <- impuresrcref:::collect_srcref_sites
-  assert_transparent_srcref_consistency <- impuresrcref:::assert_transparent_srcref_consistency
-}
 
 make_fn <- function(code) {
   eval(parse(text = code, keep.source = TRUE)[[1L]], envir = new.env(parent = baseenv()))
 }
 
-cases <- list(
+srcref_cases <- list(
   list(
     name = "if-logical",
     code = "function(x, y) { if (x && y) f() else g() }"
@@ -75,9 +41,9 @@ cases <- list(
 
 render_case <- function(case) {
   fn <- make_fn(case$code)
-  one <- impute_srcrefs(fn)
-  two <- impute_srcrefs(one)
-  checks <- assert_transparent_srcref_consistency(one)
+  one <- imputesrcref::impute_srcrefs(fn)
+  two <- imputesrcref::impute_srcrefs(one)
+  checks <- imputesrcref:::assert_transparent_srcref_consistency(one)
 
   idempotent <- identical(body(one), body(two)) && identical(formals(one), formals(two))
   if (!idempotent) {
@@ -89,13 +55,11 @@ render_case <- function(case) {
     sprintf("idempotent=%s", idempotent),
     sprintf("transparent_checks=%d", checks$checked),
     sprintf("transparent_checks_ok=%s", checks$ok),
-    collect_srcref_sites(one),
+    imputesrcref:::collect_srcref_sites(one),
     checks$lines,
     ""
   )
 }
-
-actual <- unlist(lapply(cases, render_case), use.names = FALSE)
 
 render_source_case <- function() {
   src <- tempfile("source-impute-", fileext = ".R")
@@ -110,9 +74,9 @@ render_source_case <- function() {
   )
 
   env <- new.env(parent = baseenv())
-  res <- source_impute_srcrefs(src, envir = env)
-  checks_f1 <- assert_transparent_srcref_consistency(env$f1)
-  checks_f2 <- assert_transparent_srcref_consistency(env$f2)
+  res <- imputesrcref::source_impute_srcrefs(src, envir = env)
+  checks_f1 <- imputesrcref:::assert_transparent_srcref_consistency(env$f1)
+  checks_f2 <- imputesrcref:::assert_transparent_srcref_consistency(env$f2)
 
   parse_rows <- function(fn) {
     sr <- attr(fn, "srcref", exact = TRUE)
@@ -123,7 +87,7 @@ render_source_case <- function() {
     if (is.null(srcfile)) {
       return(NA_integer_)
     }
-    pd <- getParseData(srcfile)
+    pd <- utils::getParseData(srcfile)
     if (is.null(pd)) {
       return(NA_integer_)
     }
@@ -140,15 +104,13 @@ render_source_case <- function() {
     sprintf("f2_transparent_checks=%d", checks_f2$checked),
     sprintf("f1_transparent_ok=%s", checks_f1$ok),
     sprintf("f2_transparent_ok=%s", checks_f2$ok),
-    collect_srcref_sites(env$f1),
+    imputesrcref:::collect_srcref_sites(env$f1),
     checks_f1$lines,
-    collect_srcref_sites(env$f2),
+    imputesrcref:::collect_srcref_sites(env$f2),
     checks_f2$lines,
     ""
   )
 }
-
-actual <- c(actual, render_source_case())
 
 render_package_like_srcref_case <- function() {
   txt <- paste(
@@ -166,8 +128,8 @@ render_package_like_srcref_case <- function() {
 
   fn <- env$f
   sr <- attr(fn, "srcref", exact = TRUE)
-  out <- impute_srcrefs(fn)
-  checks <- assert_transparent_srcref_consistency(out)
+  out <- imputesrcref::impute_srcrefs(fn)
+  checks <- imputesrcref:::assert_transparent_srcref_consistency(out)
 
   c(
     "=== package-like-srcref ===",
@@ -175,19 +137,17 @@ render_package_like_srcref_case <- function() {
     sprintf("sr_slots_7_8=%d-%d", sr[[7L]], sr[[8L]]),
     sprintf("transparent_checks=%d", checks$checked),
     sprintf("transparent_checks_ok=%s", checks$ok),
-    collect_srcref_sites(out),
+    imputesrcref:::collect_srcref_sites(out),
     checks$lines,
     ""
   )
 }
 
-actual <- c(actual, render_package_like_srcref_case())
-
 render_zero_formals_case <- function() {
   fn <- make_fn("function() if (TRUE) f() else g()")
-  one <- impute_srcrefs(fn)
-  two <- impute_srcrefs(one)
-  checks <- assert_transparent_srcref_consistency(one)
+  one <- imputesrcref::impute_srcrefs(fn)
+  two <- imputesrcref::impute_srcrefs(one)
+  checks <- imputesrcref:::assert_transparent_srcref_consistency(one)
   idempotent <- identical(body(one), body(two)) && identical(formals(one), formals(two))
 
   c(
@@ -196,16 +156,14 @@ render_zero_formals_case <- function() {
     sprintf("idempotent=%s", idempotent),
     sprintf("transparent_checks=%d", checks$checked),
     sprintf("transparent_checks_ok=%s", checks$ok),
-    collect_srcref_sites(one),
+    imputesrcref:::collect_srcref_sites(one),
     checks$lines,
     ""
   )
 }
 
-actual <- c(actual, render_zero_formals_case())
-
 render_package_case <- function() {
-  run <- impute_package_srcrefs("base", include_internal = FALSE, verbose = FALSE)
+  run <- imputesrcref::impute_package_srcrefs("base", include_internal = FALSE, verbose = FALSE)
 
   c(
     "=== package-base ===",
@@ -214,8 +172,6 @@ render_package_case <- function() {
     ""
   )
 }
-
-actual <- c(actual, render_package_case())
 
 render_no_srcref_fallback_case <- function() {
   fn <- eval(
@@ -228,7 +184,7 @@ render_no_srcref_fallback_case <- function() {
   options(impuresrcref.allow_deparse_fallback = FALSE)
   err <- tryCatch(
     {
-      impute_srcrefs(fn)
+      imputesrcref::impute_srcrefs(fn)
       NULL
     },
     error = function(e) e
@@ -238,55 +194,26 @@ render_no_srcref_fallback_case <- function() {
     grepl("impuresrcref.allow_deparse_fallback", conditionMessage(err), fixed = TRUE)
 
   options(impuresrcref.allow_deparse_fallback = TRUE)
-  out <- impute_srcrefs(fn)
-  checks <- assert_transparent_srcref_consistency(out)
+  out <- imputesrcref::impute_srcrefs(fn)
+  checks <- imputesrcref:::assert_transparent_srcref_consistency(out)
 
   c(
     "=== no-srcref-fallback ===",
     sprintf("default_blocked=%s", blocked),
     sprintf("fallback_checks=%d", checks$checked),
     sprintf("fallback_ok=%s", checks$ok),
-    collect_srcref_sites(out),
+    imputesrcref:::collect_srcref_sites(out),
     checks$lines,
     ""
   )
 }
 
-actual <- c(actual, render_no_srcref_fallback_case())
-
-expected_path <- file.path(test_dir, "test-srcref-imputation.out")
-update_snapshots <- identical(Sys.getenv("UPDATE_SNAPSHOTS", unset = ""), "1") ||
-  ("--update" %in% cmd_args)
-
-if (update_snapshots) {
-  writeLines(actual, con = expected_path, useBytes = TRUE)
-  cat("Updated snapshot:", expected_path, "\n")
-  quit(status = 0L)
+render_srcref_snapshot <- function() {
+  actual <- unlist(lapply(srcref_cases, render_case), use.names = FALSE)
+  actual <- c(actual, render_source_case())
+  actual <- c(actual, render_package_like_srcref_case())
+  actual <- c(actual, render_zero_formals_case())
+  actual <- c(actual, render_package_case())
+  actual <- c(actual, render_no_srcref_fallback_case())
+  actual
 }
-
-if (!file.exists(expected_path)) {
-  stop(
-    sprintf(
-      "Expected snapshot missing: %s (run with UPDATE_SNAPSHOTS=1 Rscript %s)",
-      expected_path,
-      script_path
-    ),
-    call. = FALSE
-  )
-}
-
-expected <- readLines(expected_path, warn = FALSE)
-if (!identical(actual, expected)) {
-  out_path <- tempfile("srcref-imputation-", fileext = ".out")
-  writeLines(actual, con = out_path, useBytes = TRUE)
-  stop(
-    sprintf(
-      "Snapshot mismatch. Run `UPDATE_SNAPSHOTS=1 Rscript %s`. Actual written to %s",
-      script_path,
-      out_path
-    ),
-    call. = FALSE
-  )
-}
-
-cat("Snapshot OK:", expected_path, "\n")

@@ -9,7 +9,10 @@ Description: Rewrites R function ASTs by injecting transparent brace calls in
     control-flow positions and imputing source references ('srcref') from parse
     data. Supports individual functions, sourced files, and installed package
     namespace functions, including package-style 'srcref' line mappings.
-Suggests: ggplot2
+Suggests:
+    ggplot2,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

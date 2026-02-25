@@ -110,17 +110,22 @@ They include regression coverage for:
 Run tests in compare mode:
 
 ```r
-Rscript tests/test-srcref-imputation.R
+Rscript -e "testthat::test_check('imputesrcref')"
 ```
 
 Refresh snapshots:
 
 ```r
-UPDATE_SNAPSHOTS=1 Rscript tests/test-srcref-imputation.R
+UPDATE_SNAPSHOTS=1 Rscript -e "testthat::test_check('imputesrcref')"
 ```
 
 By default, mismatches fail. With `UPDATE_SNAPSHOTS=1`, the snapshot file is rewritten.
-Legacy `--update` is still accepted for compatibility.
+
+Run the optional full ggplot2 package test:
+
+```r
+FULL_TEST=1 Rscript -e "testthat::test_check('imputesrcref')"
+```
 
 ## Acknowledgements
 

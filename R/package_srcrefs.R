@@ -46,7 +46,7 @@ impute_package_srcrefs <- function(
     fn <- get(nm, envir = env, inherits = FALSE)
     failed[i] <- NA
 
-    parse_data <- tryCatch(getParseData(fn), error = function(e) NULL)
+    parse_data <- tryCatch(utils::getParseData(fn), error = function(e) NULL)
     if (is.null(parse_data)) {
       failed[i] <- "missing parse data"
       next

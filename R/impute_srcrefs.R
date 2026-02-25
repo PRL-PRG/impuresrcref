@@ -486,7 +486,7 @@ impute_srcrefs <- function(fn) {
   fn_attrs <- attributes(fn)
   src <- source_text_from_srcref(fn)
   parsed <- parse(text = src$text, keep.source = TRUE)
-  pd <- getParseData(parsed)
+  pd <- utils::getParseData(parsed)
 
   if (is.null(pd) || nrow(pd) == 0L) {
     stop("Could not obtain parse data for function", call. = FALSE)

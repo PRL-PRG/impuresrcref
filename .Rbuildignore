@@ -1,1 +1,4 @@
 ^LICENSE\.md$
+^\.git($|/)
+^\.github($|/)
+^\.{2}Rcheck($|/)
