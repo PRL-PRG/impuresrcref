@@ -8,9 +8,10 @@ In R, a [`srcref`](https://stat.ethz.ch/R-manual/R-devel/library/base/html/srcfi
 parsed objects when source retention is enabled (for example with
 `options(keep.source = TRUE)`).
 This package solves a finer-grained mapping problem for control-flow
-expressions written without braces (for example `if (x) f() else g()`). It
-adds transparent wrappers and imputes srcrefs from parse data so individual
-control-flow components can be mapped to source precisely.
+expressions written without braces (for example `if (x) f() else g()`) and
+for unbraced function-call arguments. It adds transparent wrappers and imputes
+srcrefs from parse data so individual components can be mapped to source
+precisely.
 It uses the parser token tables [`getParseData`](https://stat.ethz.ch/R-manual/R-devel/library/utils/html/getParseData.html) for it.
 
 ## What it does
@@ -21,10 +22,16 @@ Given code like:
 if (x && y) f() else g()
 ```
 
-`impute_srcrefs()` rewrites control-flow positions to:
+`impute_srcrefs()` rewrites target positions to:
 
 ```r
 if ({x} && {y}) {f()} else {g()}
+```
+
+and:
+
+```r
+g({x+1}, {f({y+1})})
 ```
 
 and assigns srcrefs to injected `{` calls using parse-data-derived source spans.
@@ -32,7 +39,7 @@ and assigns srcrefs to injected `{` calls using parse-data-derived source spans.
 ## Exported API
 
 - `impute_srcrefs(fn)`
-  - Impute missing control-flow braces and transparent srcrefs for one function.
+  - Impute missing control-flow/function-call braces and transparent srcrefs for one function.
 - `source_impute_srcrefs(file, envir = parent.frame(), ...)`
   - Source an R file and patch all changed/new functions in the target environment.
 - `impute_package_srcrefs(package, include_internal = TRUE, ...)`

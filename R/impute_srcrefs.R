@@ -425,18 +425,26 @@ transform_expr <- function(expr, node_id, ctx) {
     return(expr)
   }
 
+  # For plain parenthesized calls, wrap argument slots but never the callee.
+  # This covers cases like g(x + 1, f(y + 1)) -> g({x + 1}, {f({y + 1})}).
+  wrap_generic_args <- node_has_token(node_id, "'('", ctx) && !identical(op, "(")
+
   for (k in seq_along(mapping$indices)) {
     i <- mapping$indices[[k]]
     cid <- mapping$ids[[k]]
-    parts <- set_element(parts, i, transform_expr(parts[[i]], cid, ctx))
+    value <- transform_expr(parts[[i]], cid, ctx)
+    if (wrap_generic_args && i > 1L && !is_braced(value)) {
+      value <- wrap_with_transparent_brace(value, node_srcref(cid, ctx))
+    }
+    parts <- set_element(parts, i, value)
   }
 
   rebuild_call(parts, expr)
 }
 
-#' Impute srcrefs for missing control-flow braces in a function AST.
+#' Impute transparent srcrefs for injected braces in a function AST.
 #'
-#' Traverses a function's AST and wraps unbraced expressions in control-flow
+#' Traverses a function's AST and wraps unbraced expressions in targeted
 #' positions with `{ ... }` while attaching transparent srcrefs to the injected
 #' brace calls. The srcref assigned to an injected brace matches the span of the
 #' wrapped expression so that source mapping stays aligned with original code.
@@ -447,6 +455,7 @@ transform_expr <- function(expr, node_id, ctx) {
 #' - `switch`
 #' - logical operators (`&&`, `||`, `&`, `|`)
 #' - function defaults and function bodies
+#' - function call arguments
 #'
 #' @param fn A function.
 #'

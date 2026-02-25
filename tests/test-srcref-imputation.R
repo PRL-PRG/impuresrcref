@@ -62,6 +62,10 @@ cases <- list(
   list(
     name = "null-args-preserved",
     code = "function() { f(NULL, if (x) y else z, NULL, if (p) q else r, NULL) }"
+  ),
+  list(
+    name = "generic-call-args",
+    code = "function(x, y) g(x+1, f(y+1))"
   )
 )
 
