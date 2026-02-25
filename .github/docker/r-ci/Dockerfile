@@ -18,7 +18,7 @@ RUN Rscript -e "options(\
   keep.parse.data.pkgs = TRUE,\
   Ncpus = max(1L, parallel::detectCores() - 1L)\
 ); install.packages(\
-  c('ggplot2', 'dplyr', 'stringr'),\
+  c('ggplot2', 'dplyr', 'stringr', 'testthat'),\
   dependencies = NA,\
   INSTALL_opts = c('--with-keep.source', '--with-keep.parse.data')\
 )"
