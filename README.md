@@ -1,6 +1,6 @@
-# impuresrcref
+# imputesrcref
 
-`impuresrcref` imputes transparent `srcref` metadata for injected brace calls (`{`) in R function ASTs.
+`imputesrcref` imputes transparent `srcref` metadata for injected brace calls (`{`) in R function ASTs.
 
 ## srcref primer
 
@@ -90,7 +90,7 @@ Returned fields are:
 For functions created without srcrefs, opt into deparse-based fallback explicitly:
 
 ```r
-options(impuresrcref.allow_deparse_fallback = TRUE)
+options(imputesrcref.allow_deparse_fallback = TRUE)
 ```
 
 ## Tests
