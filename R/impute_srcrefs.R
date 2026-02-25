@@ -168,17 +168,19 @@ map_generic_indices <- function(parts, child_ids, drop_first_child = FALSE) {
   n <- length(parts)
   present <- which(!vapply(parts, is_missing_arg, logical(1)))
 
-  if (length(ids) == n) {
-    return(list(indices = seq_len(n), ids = ids))
-  }
-  if (length(ids) == n - 1L && n >= 2L) {
-    return(list(indices = seq.int(2L, n), ids = ids))
-  }
+  # Prefer mappings that naturally skip explicit missing arguments.
   if (length(ids) == length(present)) {
     return(list(indices = present, ids = ids))
   }
   if (length(present) >= 1L && length(ids) == length(present) - 1L) {
     return(list(indices = present[-1L], ids = ids))
+  }
+
+  if (length(ids) == n) {
+    return(list(indices = seq_len(n), ids = ids))
+  }
+  if (length(ids) == n - 1L && n >= 2L) {
+    return(list(indices = seq.int(2L, n), ids = ids))
   }
 
   NULL
@@ -432,6 +434,9 @@ transform_expr <- function(expr, node_id, ctx) {
   for (k in seq_along(mapping$indices)) {
     i <- mapping$indices[[k]]
     cid <- mapping$ids[[k]]
+    if (is_missing_arg(parts[[i]])) {
+      next
+    }
     value <- transform_expr(parts[[i]], cid, ctx)
     if (wrap_generic_args && i > 1L && !is_braced(value)) {
       value <- wrap_with_transparent_brace(value, node_srcref(cid, ctx))

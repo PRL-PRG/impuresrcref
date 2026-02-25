@@ -66,6 +66,10 @@ cases <- list(
   list(
     name = "generic-call-args",
     code = "function(x, y) g(x+1, f(y+1))"
+  ),
+  list(
+    name = "missing-call-arg",
+    code = "function() quote(expr = )"
   )
 )
 

@@ -128,6 +128,13 @@ check path=body/2/2 ok=TRUE sr_text="x + 1" expr_text="x + 1"
 check path=body/2/3 ok=TRUE sr_text="f(y + 1)" expr_text="f(y + 1)"
 check path=body/2/3/2/2 ok=TRUE sr_text="y + 1" expr_text="y + 1"
 
+=== missing-call-arg ===
+idempotent=TRUE
+transparent_checks=1
+transparent_checks_ok=TRUE
+path=body node={ quote(expr = ) } sr1=(1,12,1,25,12,25,1,1) sr2=(1,12,1,25,12,25,1,1)
+check path=body ok=TRUE sr_text="quote(expr = )" expr_text="quote(expr = )"
+
 === source-file ===
 count=2
 functions=f1,f2
