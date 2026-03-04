@@ -65,7 +65,13 @@ jobs:
       - name: Install package
         run: R CMD INSTALL .
 
-      - name: Test
+      - name: Run tests
+        run: Rscript -e "testthat::test_dir('tests/testthat', load_package = 'source')"
+
+      - name: Run full package test (preinstalled ggplot2)
         env:
           FULL_TEST: "1"
-        run: Rscript -e "testthat::test_dir('tests/testthat')"
+        run: Rscript -e "testthat::test_file('tests/testthat/test-package-srcref-imputation.R')"
+
+      - name: Run check
+        run: R CMD check --no-manual .

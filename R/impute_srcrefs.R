@@ -429,7 +429,10 @@ transform_expr <- function(expr, node_id, ctx) {
 
   # For plain parenthesized calls, wrap argument slots but never the callee.
   # This covers cases like g(x + 1, f(y + 1)) -> g({x + 1}, {f({y + 1})}).
-  wrap_generic_args <- node_has_token(node_id, "'('", ctx) && !identical(op, "(")
+  is_blacklisted <- nzchar(op) && op %in% ctx$arg_wrap_blacklist
+  wrap_generic_args <- node_has_token(node_id, "'('", ctx) &&
+    !identical(op, "(") &&
+    !is_blacklisted
 
   for (k in seq_along(mapping$indices)) {
     i <- mapping$indices[[k]]
@@ -472,6 +475,10 @@ transform_expr <- function(expr, node_id, ctx) {
 #' default. To allow fallback, set
 #' `options(impuresrcref.allow_deparse_fallback = TRUE)`.
 #'
+#' Generic call argument wrapping skips blacklisted callee names. By default the
+#' blacklist includes primitive `SPECIALSXP` calls from `builtins()`. Use
+#' [set_impute_blacklist()] / [reset_impute_blacklist()] to customize.
+#'
 #' @examples
 #' options(keep.source = TRUE)
 #' f <- eval(parse(text = "function(x, y) if (x && y) f() else g()", keep.source = TRUE)[[1]])
@@ -511,7 +518,8 @@ impute_srcrefs <- function(fn) {
     expr_index = split(expr_rows, expr_rows$id),
     srcfile = src$srcfile,
     line_offset = src$line_offset,
-    first_col_offset = src$first_col_offset
+    first_col_offset = src$first_col_offset,
+    arg_wrap_blacklist = effective_blacklist_names()
   )
 
   fn_expr <- as.call(list(as.name("function"), formals(fn), body(fn)))

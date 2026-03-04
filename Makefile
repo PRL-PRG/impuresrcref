@@ -7,7 +7,7 @@ install:
 	$(R) CMD INSTALL .
 
 test:
-	$(RSCRIPT) -e "testthat::test_check('imputesrcref')"
+	$(RSCRIPT) -e "testthat::test_dir('tests/testthat', load_package = 'source')"
 
 clean:
 	rm -rf *.tar.gz *.Rcheck

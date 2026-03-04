@@ -44,6 +44,12 @@ and assigns srcrefs to injected `{` calls using parse-data-derived source spans.
   - Source an R file and patch all changed/new functions in the target environment.
 - `impute_package_srcrefs(package, include_internal = TRUE, ...)`
   - Patch package namespace functions if parse data is available
+- `get_impute_blacklist(include_default = TRUE)`
+  - Inspect call names excluded from generic argument wrapping.
+- `set_impute_blacklist(functions, append = TRUE)`
+  - Add or replace user blacklist entries.
+- `reset_impute_blacklist()`
+  - Clear user blacklist entries.
 
 ## Important: package installs and parse data
 
@@ -91,6 +97,22 @@ Returned fields are:
 - `patched_count`
 - `install_command` (reinstall hint when nothing could be patched)
 
+### Blacklist API
+
+Generic call wrapping excludes `SPECIALSXP` primitive names by default (from `builtins()`).
+Add your own exclusions with:
+
+```r
+set_impute_blacklist(c("str_c", "paste0"))
+```
+
+Inspect active values:
+
+```r
+head(get_impute_blacklist())
+get_impute_blacklist(include_default = FALSE)
+```
+
 ### Functions without srcref metadata
 
 `impute_srcrefs()` requires function srcref metadata by default.
@@ -110,13 +132,13 @@ They include regression coverage for:
 Run tests in compare mode:
 
 ```r
-Rscript -e "testthat::test_check('imputesrcref')"
+Rscript -e "testthat::test_dir('tests/testthat', load_package = 'source')"
 ```
 
 Refresh snapshots:
 
 ```r
-UPDATE_SNAPSHOTS=1 Rscript -e "testthat::test_check('imputesrcref')"
+UPDATE_SNAPSHOTS=1 Rscript -e "testthat::test_dir('tests/testthat', load_package = 'source')"
 ```
 
 By default, mismatches fail. With `UPDATE_SNAPSHOTS=1`, the snapshot file is rewritten.
@@ -124,7 +146,7 @@ By default, mismatches fail. With `UPDATE_SNAPSHOTS=1`, the snapshot file is rew
 Run the optional full ggplot2 package test:
 
 ```r
-FULL_TEST=1 Rscript -e "testthat::test_check('imputesrcref')"
+FULL_TEST=1 Rscript -e "testthat::test_file('tests/testthat/test-package-srcref-imputation.R')"
 ```
 
 ## Acknowledgements
