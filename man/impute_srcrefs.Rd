@@ -2,19 +2,22 @@
 % Please edit documentation in R/impute_srcrefs.R
 \name{impute_srcrefs}
 \alias{impute_srcrefs}
-\title{Impute srcrefs for missing control-flow braces in a function AST.}
+\title{Impute transparent srcrefs for injected braces in a function AST.}
 \usage{
-impute_srcrefs(fn)
+impute_srcrefs(fn, wrap_call_args = TRUE)
 }
 \arguments{
 \item{fn}{A function.}
+
+\item{wrap_call_args}{If \code{TRUE} (default), wrap generic function-call
+arguments that are call expressions.}
 }
 \value{
 A function with transformed body/formals and preserved function-level
 attributes (including srcref/srcfile metadata when present).
 }
 \description{
-Traverses a function's AST and wraps unbraced expressions in control-flow
+Traverses a function's AST and wraps unbraced expressions in targeted
 positions with \code{{ ... }} while attaching transparent srcrefs to the injected
 brace calls. The srcref assigned to an injected brace matches the span of the
 wrapped expression so that source mapping stays aligned with original code.
@@ -27,11 +30,16 @@ Covered constructs include:
 \item \code{switch}
 \item logical operators (\code{&&}, \code{||}, \code{&}, \code{|})
 \item function defaults and function bodies
+\item function call arguments (optional; call expressions only)
 }
 
 For functions without srcref metadata, deparse-based fallback is disabled by
 default. To allow fallback, set
 \code{options(impuresrcref.allow_deparse_fallback = TRUE)}.
+
+Generic call argument wrapping skips blacklisted callee names. By default the
+blacklist includes primitive \code{SPECIALSXP} calls from \code{builtins()}.
+Use \code{\link[=set_impute_blacklist]{set_impute_blacklist()}} / \code{\link[=reset_impute_blacklist]{reset_impute_blacklist()}} to customize.
 }
 \examples{
 options(keep.source = TRUE)

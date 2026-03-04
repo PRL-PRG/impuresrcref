@@ -428,11 +428,13 @@ transform_expr <- function(expr, node_id, ctx) {
   }
 
   # For plain parenthesized calls, wrap argument slots but never the callee.
-  # This covers cases like g(x + 1, f(y + 1)) -> g({x + 1}, {f({y + 1})}).
+  # Wrapping is restricted to call expressions to avoid touching simple values
+  # (e.g. f(x + 1, 1) -> f({x + 1}, 1)).
   is_blacklisted <- nzchar(op) && op %in% ctx$arg_wrap_blacklist
   wrap_generic_args <- node_has_token(node_id, "'('", ctx) &&
     !identical(op, "(") &&
-    !is_blacklisted
+    !is_blacklisted &&
+    isTRUE(ctx$wrap_call_args)
 
   for (k in seq_along(mapping$indices)) {
     i <- mapping$indices[[k]]
@@ -441,7 +443,7 @@ transform_expr <- function(expr, node_id, ctx) {
       next
     }
     value <- transform_expr(parts[[i]], cid, ctx)
-    if (wrap_generic_args && i > 1L && !is_braced(value)) {
+    if (wrap_generic_args && i > 1L && is.call(parts[[i]]) && !is_braced(value)) {
       value <- wrap_with_transparent_brace(value, node_srcref(cid, ctx))
     }
     parts <- set_element(parts, i, value)
@@ -463,9 +465,11 @@ transform_expr <- function(expr, node_id, ctx) {
 #' - `switch`
 #' - logical operators (`&&`, `||`, `&`, `|`)
 #' - function defaults and function bodies
-#' - function call arguments
+#' - function call arguments (optional; call expressions only)
 #'
 #' @param fn A function.
+#' @param wrap_call_args If `TRUE` (default), wrap generic function-call
+#'   arguments that are call expressions.
 #'
 #' @return A function with transformed body/formals and preserved function-level
 #'   attributes (including srcref/srcfile metadata when present).
@@ -485,9 +489,12 @@ transform_expr <- function(expr, node_id, ctx) {
 #' g <- impute_srcrefs(f)
 #' g
 #' @export
-impute_srcrefs <- function(fn) {
+impute_srcrefs <- function(fn, wrap_call_args = TRUE) {
   if (!is.function(fn)) {
     stop("`fn` must be a function", call. = FALSE)
+  }
+  if (!is.logical(wrap_call_args) || length(wrap_call_args) != 1L || is.na(wrap_call_args)) {
+    stop("`wrap_call_args` must be TRUE or FALSE", call. = FALSE)
   }
 
   fn_attrs <- attributes(fn)
@@ -519,7 +526,8 @@ impute_srcrefs <- function(fn) {
     srcfile = src$srcfile,
     line_offset = src$line_offset,
     first_col_offset = src$first_col_offset,
-    arg_wrap_blacklist = effective_blacklist_names()
+    arg_wrap_blacklist = effective_blacklist_names(),
+    wrap_call_args = wrap_call_args
   )
 
   fn_expr <- as.call(list(as.name("function"), formals(fn), body(fn)))
