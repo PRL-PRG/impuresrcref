@@ -417,7 +417,22 @@ transform_expr <- function(expr, node_id, ctx) {
 
   if (op %in% c("&&", "||", "&", "|")) {
     if (length(child_ids) < 2L) {
-      stop(sprintf("Parse mapping mismatch for %s expression", op), call. = FALSE)
+      # Some package parse tables do not expose both operand expr nodes.
+      # Fall back to structural recursion without brace imputation.
+      if (length(child_ids) == 1L) {
+        parts <- set_element(parts, 2L, transform_expr(parts[[2L]], child_ids[[1L]], ctx))
+        if (length(parts) >= 3L) {
+          parts <- set_element(parts, 3L, transform_expr(parts[[3L]], node_id, ctx))
+        }
+      } else {
+        if (length(parts) >= 2L) {
+          parts <- set_element(parts, 2L, transform_expr(parts[[2L]], node_id, ctx))
+        }
+        if (length(parts) >= 3L) {
+          parts <- set_element(parts, 3L, transform_expr(parts[[3L]], node_id, ctx))
+        }
+      }
+      return(rebuild_call(parts, expr))
     }
 
     recurse_slot(2L, child_ids[[1L]], wrap = TRUE)
@@ -439,14 +454,31 @@ transform_expr <- function(expr, node_id, ctx) {
     !is_blacklisted &&
     isTRUE(ctx$wrap_call_args)
 
+  # Assignment operators: the LHS target (slot 2) must never be brace-wrapped.
+  # Wrapping `x[i]` in braces makes it `{x[i]} <- value`, which causes R to
+  # look for the nonexistent `{<-` replacement function.
+  is_assign_op <- nzchar(op) && op %in% c("<-", "<<-", "=", "->", "->>")
+
+  lhs_slot <- if (op %in% c("->", "->>")) 3L else 2L
+
   for (k in seq_along(mapping$indices)) {
     i <- mapping$indices[[k]]
     cid <- mapping$ids[[k]]
     if (is_missing_arg(parts[[i]])) {
       next
     }
-    value <- transform_expr(parts[[i]], cid, ctx)
-    if (wrap_generic_args && i > 1L && is.call(parts[[i]]) && !is_braced(value)) {
+    is_assign_lhs <- is_assign_op && i == lhs_slot
+    # When recursing into an assignment LHS (e.g. `length(slot(x, nm)) <- 0L`),
+    # suppress wrap_call_args so that nested call arguments inside the LHS are
+    # not brace-wrapped.  Wrapping produces e.g. `length({slot(x, nm)}) <- 0L`
+    # which causes R to look for the nonexistent `{<-` replacement function.
+    recurse_ctx <- if (is_assign_lhs && isTRUE(ctx$wrap_call_args)) {
+      c(ctx[names(ctx) != "wrap_call_args"], list(wrap_call_args = FALSE))
+    } else {
+      ctx
+    }
+    value <- transform_expr(parts[[i]], cid, recurse_ctx)
+    if (wrap_generic_args && i > 1L && !is_assign_lhs && is.call(parts[[i]]) && !is_braced(value)) {
       value <- wrap_with_transparent_brace(value, node_srcref(cid, ctx))
     }
     parts <- set_element(parts, i, value)
