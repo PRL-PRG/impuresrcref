@@ -201,8 +201,11 @@ rebuild_call <- function(parts, template) {
 
 set_element <- function(x, i, value) {
   # Preserve explicit NULL arguments/defaults. `[[<- NULL` deletes an element.
+  # `[<-` coerces pairlists to regular lists; restore the original type so that
+  # nested `function(...)` formal lists remain pairlists as R requires.
+  is_pl <- is.pairlist(x)
   x[i] <- list(value)
-  x
+  if (is_pl) as.pairlist(x) else x
 }
 
 transform_expr <- function(expr, node_id, ctx) {
