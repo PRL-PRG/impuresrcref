@@ -16,6 +16,20 @@ is_logical_op_call <- function(expr) {
     as.character(expr[[1]]) %in% c("&&", "||", "&", "|")
 }
 
+is_unquote_call <- function(expr) {
+  # rlang's !! and !!! unquoting operators appear in the R AST as double/triple
+  # negation: !!x -> !(!(x)), !!!x -> !(!(!(x))). Wrapping them in transparent
+  # braces changes semantics when the surrounding call is later processed by
+  # rlang::inject() or similar, because {!!x} injects a block instead of the
+  # bare value that !! would produce.
+  is.call(expr) &&
+    length(expr) == 2L &&
+    identical(expr[[1L]], as.name("!")) &&
+    is.call(expr[[2L]]) &&
+    length(expr[[2L]]) == 2L &&
+    identical(expr[[2L]][[1L]], as.name("!"))
+}
+
 expr_children <- function(node_id, ctx) {
   # `node_id` is an `expr` row id from parse data. This returns child `expr`
   # node ids in source order so AST argument positions can be mapped to parse
@@ -63,15 +77,16 @@ source_text_from_srcref <- function(fn) {
 
   # Fallback for functions that do not carry srcref metadata.
   if (is.null(sr)) {
+    warning(
+      paste(
+        "Function has no srcref metadata.",
+        "No change."
+      ),
+      call. = FALSE
+    )
+
     if (!isTRUE(getOption("impuresrcref.allow_deparse_fallback", FALSE))) {
-      stop(
-        paste(
-          "Function has no srcref metadata.",
-          "Set options(impuresrcref.allow_deparse_fallback = TRUE)",
-          "to enable deparse-based fallback."
-        ),
-        call. = FALSE
-      )
+      return(NULL)
     }
 
     txt <- paste(deparse(fn, width.cutoff = 500L), collapse = "\n")
@@ -276,7 +291,7 @@ transform_expr <- function(expr, node_id, ctx) {
 
       val <- fmls[[idx]]
       val <- transform_expr(val, cid, ctx)
-      if (!is_braced(val)) {
+      if (!is_braced(val) && is.call(val)) {
         val <- wrap_with_transparent_brace(val, node_srcref(cid, ctx))
       }
       fmls <- set_element(fmls, idx, val)
@@ -288,7 +303,11 @@ transform_expr <- function(expr, node_id, ctx) {
 
     body_id <- child_ids[[cursor]]
     body_expr <- transform_expr(parts[[3]], body_id, ctx)
-    if (!is_braced(body_expr)) {
+    # Only wrap the body if it is not already a call (e.g. a symbol or literal).
+    # Wrapping a call body in { } changes body(fn)[[1]] from the callee to `{`,
+    # breaking meta-programming tests that introspect function body structure.
+    # Call-type bodies already have their sub-expressions tracked individually.
+    if (!is_braced(body_expr) && !is.call(body_expr)) {
       body_expr <- wrap_with_transparent_brace(body_expr, node_srcref(body_id, ctx))
     }
 
@@ -478,7 +497,7 @@ transform_expr <- function(expr, node_id, ctx) {
       ctx
     }
     value <- transform_expr(parts[[i]], cid, recurse_ctx)
-    if (wrap_generic_args && i > 1L && !is_assign_lhs && is.call(parts[[i]]) && !is_braced(value)) {
+    if (wrap_generic_args && i > 1L && !is_assign_lhs && is.call(parts[[i]]) && !is_braced(value) && !is_unquote_call(parts[[i]]) && !is_call_named(parts[[i]], ":=")) {
       value <- wrap_with_transparent_brace(value, node_srcref(cid, ctx))
     }
     parts <- set_element(parts, i, value)
@@ -534,6 +553,9 @@ impute_srcrefs <- function(fn, wrap_call_args = TRUE) {
 
   fn_attrs <- attributes(fn)
   src <- source_text_from_srcref(fn)
+  if (is.null(src)) {
+    return(fn)
+  }
   parsed <- parse(text = src$text, keep.source = TRUE)
   pd <- utils::getParseData(parsed)
 
