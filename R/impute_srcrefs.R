@@ -121,15 +121,14 @@ source_text_from_srcref <- function(fn) {
 
   # Fallback for functions that do not carry srcref metadata.
   if (is.null(sr)) {
-    warning(
-      paste(
-        "Function has no srcref metadata.",
-        "No change."
-      ),
-      call. = FALSE
-    )
-
-    if (!isTRUE(getOption("impuresrcref.allow_deparse_fallback", FALSE))) {
+    if (!isTRUE(getOption("imputesrcref.allow_deparse_fallback", FALSE))) {
+      message(
+        paste(
+          "Function has no srcref metadata and deparse fallback is disabled; no changes were made.",
+          "Set options(imputesrcref.allow_deparse_fallback = TRUE)",
+          "to enable deparse-based fallback."
+        )
+      )
       return(NULL)
     }
 
