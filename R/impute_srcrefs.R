@@ -22,12 +22,35 @@ is_unquote_call <- function(expr) {
   # braces changes semantics when the surrounding call is later processed by
   # rlang::inject() or similar, because {!!x} injects a block instead of the
   # bare value that !! would produce.
+  # The parenthesized form (!!x) parses to `(`(!(!(x))): the outer call is `(`
+  # not `!`, so we recurse into the `(` argument to check for the double-neg.
+  if (!is.call(expr) || length(expr) != 2L) {
+    return(FALSE)
+  }
+  head <- expr[[1L]]
+  if (identical(head, as.name("!"))) {
+    inner <- expr[[2L]]
+    return(
+      is.call(inner) &&
+        length(inner) == 2L &&
+        identical(inner[[1L]], as.name("!"))
+    )
+  }
+  if (identical(head, as.name("("))) {
+    return(is_unquote_call(expr[[2L]]))
+  }
+  FALSE
+}
+
+is_unary_arith_call <- function(expr) {
+  # Unary - and + must not be brace-wrapped as generic call arguments.
+  # In DSL contexts (tidyselect, dplyr) -f() is a structural "deselect f()"
+  # operator: wrapping to {-f()} causes the block to evaluate to a negative
+  # integer, which DSL validators reject ("Selections can't have negative values").
   is.call(expr) &&
     length(expr) == 2L &&
-    identical(expr[[1L]], as.name("!")) &&
-    is.call(expr[[2L]]) &&
-    length(expr[[2L]]) == 2L &&
-    identical(expr[[2L]][[1L]], as.name("!"))
+    is.symbol(expr[[1L]]) &&
+    as.character(expr[[1L]]) %in% c("-", "+")
 }
 
 expr_children <- function(node_id, ctx) {
@@ -266,7 +289,15 @@ transform_expr <- function(expr, node_id, ctx) {
   recurse_slot <- function(i, child_id, wrap = FALSE) {
     # Helper for "recurse into slot i, then optionally brace-wrap and impute".
     value <- transform_expr(parts[[i]], child_id, ctx)
-    if (wrap && !is_braced(value)) {
+    # Do not wrap expressions whose callee is blacklisted (e.g. the ~ formula
+    # operator is a SPECIALSXP): wrapping `~cyl == 2` to `{~cyl == 2}` changes
+    # the AST structure, breaking functions that build quosures/formulas using
+    # `&`/`|` on formula objects and then inspect them with identical().
+    slot_expr <- parts[[i]]
+    slot_callee_blacklisted <- is.call(slot_expr) &&
+      is.symbol(slot_expr[[1L]]) &&
+      as.character(slot_expr[[1L]]) %in% ctx$arg_wrap_blacklist
+    if (wrap && !is_braced(value) && !slot_callee_blacklisted) {
       value <- wrap_with_transparent_brace(value, node_srcref(child_id, ctx))
     }
     parts <<- set_element(parts, i, value)
@@ -497,7 +528,7 @@ transform_expr <- function(expr, node_id, ctx) {
       ctx
     }
     value <- transform_expr(parts[[i]], cid, recurse_ctx)
-    if (wrap_generic_args && i > 1L && !is_assign_lhs && is.call(parts[[i]]) && !is_braced(value) && !is_unquote_call(parts[[i]]) && !is_call_named(parts[[i]], ":=")) {
+    if (wrap_generic_args && i > 1L && !is_assign_lhs && is.call(parts[[i]]) && !is_braced(value) && !is_unquote_call(parts[[i]]) && !is_call_named(parts[[i]], ":=") && !is_unary_arith_call(parts[[i]])) {
       value <- wrap_with_transparent_brace(value, node_srcref(cid, ctx))
     }
     parts <- set_element(parts, i, value)

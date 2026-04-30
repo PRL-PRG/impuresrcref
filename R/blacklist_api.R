@@ -26,8 +26,18 @@ user_blacklist_names <- function() {
   normalize_blacklist_names(getOption(blacklist_option_name, NULL), arg = blacklist_option_name)
 }
 
+# rlang NSE functions that capture their argument as an unevaluated expression
+# rather than evaluating it. Wrapping their arguments in transparent braces
+# changes what expression is captured, breaking downstream DSL evaluators such
+# as tidyselect (e.g. `expr({c(x)})` captures `{c(x)}` instead of `c(x)` and
+# `tidyselect::eval_select` then fails to resolve the column `x`).
+rlang_nse_names <- c(
+  "expr", "quo", "quos",
+  "enquo", "enquos", "enexpr", "enexprs"
+)
+
 effective_blacklist_names <- function() {
-  sort(unique(c(specialsxp_builtin_names, user_blacklist_names())))
+  sort(unique(c(specialsxp_builtin_names, rlang_nse_names, user_blacklist_names())))
 }
 
 #' Get call names blacklisted from generic argument wrapping.
