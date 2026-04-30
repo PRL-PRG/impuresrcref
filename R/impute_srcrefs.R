@@ -53,6 +53,27 @@ is_unary_arith_call <- function(expr) {
     as.character(expr[[1L]]) %in% c("-", "+")
 }
 
+visual_col_to_byte_col <- function(line, visual_col) {
+  # Convert a visual (tab-expanded, 8-wide tab stops) column number to the
+  # character position in `line` that starts at that visual column.
+  # R's srcref slots [5] and [6] record visual columns while substr() requires
+  # character (byte) positions: for tab-indented code these differ.
+  # Example: `\t  function(x)` has visual col 11 for `f` but byte pos 4.
+  chars <- strsplit(line, "", fixed = TRUE)[[1L]]
+  vis <- 1L
+  for (i in seq_along(chars)) {
+    if (vis >= visual_col) {
+      return(i)
+    }
+    if (chars[[i]] == "\t") {
+      vis <- ((vis - 1L) %/% 8L + 1L) * 8L + 1L
+    } else {
+      vis <- vis + 1L
+    }
+  }
+  length(chars)
+}
+
 expr_children <- function(node_id, ctx) {
   # `node_id` is an `expr` row id from parse data. This returns child `expr`
   # node ids in source order so AST argument positions can be mapped to parse
@@ -181,10 +202,14 @@ source_text_from_srcref <- function(fn) {
   }
 
   if (length(lines) == 1L) {
-    lines[1] <- substr(lines[1], chosen$start_col, chosen$end_col)
+    byte_sc <- visual_col_to_byte_col(lines[1L], chosen$start_col)
+    byte_ec <- visual_col_to_byte_col(lines[1L], chosen$end_col)
+    lines[1L] <- substr(lines[1L], byte_sc, byte_ec)
   } else {
-    lines[1] <- substr(lines[1], chosen$start_col, nchar(lines[1]))
-    lines[length(lines)] <- substr(lines[length(lines)], 1L, chosen$end_col)
+    byte_sc <- visual_col_to_byte_col(lines[1L], chosen$start_col)
+    lines[1L] <- substr(lines[1L], byte_sc, nchar(lines[1L]))
+    byte_ec <- visual_col_to_byte_col(lines[length(lines)], chosen$end_col)
+    lines[length(lines)] <- substr(lines[length(lines)], 1L, byte_ec)
   }
 
   list(
@@ -528,7 +553,14 @@ transform_expr <- function(expr, node_id, ctx) {
       ctx
     }
     value <- transform_expr(parts[[i]], cid, recurse_ctx)
-    if (wrap_generic_args && i > 1L && !is_assign_lhs && is.call(parts[[i]]) && !is_braced(value) && !is_unquote_call(parts[[i]]) && !is_call_named(parts[[i]], ":=") && !is_unary_arith_call(parts[[i]])) {
+    # Mirror the `recurse_slot` check: do not brace-wrap an argument whose
+    # callee is a blacklisted primitive (e.g. `[`, `[[`, `$`, `~`). Wrapping
+    # these changes the deparsed form of error messages and breaks packages
+    # (like Matrix) that compare test output against saved `.Rout.save` files.
+    slot_callee_blacklisted <- is.call(parts[[i]]) &&
+      is.symbol(parts[[i]][[1L]]) &&
+      as.character(parts[[i]][[1L]]) %in% ctx$arg_wrap_blacklist
+    if (wrap_generic_args && i > 1L && !is_assign_lhs && is.call(parts[[i]]) && !is_braced(value) && !is_unquote_call(parts[[i]]) && !is_call_named(parts[[i]], ":=") && !is_unary_arith_call(parts[[i]]) && !slot_callee_blacklisted) {
       value <- wrap_with_transparent_brace(value, node_srcref(cid, ctx))
     }
     parts <- set_element(parts, i, value)
@@ -587,7 +619,24 @@ impute_srcrefs <- function(fn, wrap_call_args = TRUE) {
   if (is.null(src)) {
     return(fn)
   }
-  parsed <- parse(text = src$text, keep.source = TRUE)
+  parsed <- tryCatch(
+    parse(text = src$text, keep.source = TRUE),
+    error = function(e) e
+  )
+  # Functions defined inside a parenthesized call (e.g. setMethod("f", sig,
+  # function(x) if(cond)\n  then\nelse else_expr)) rely on the surrounding `(`
+  # to suppress the implicit semicolon that R inserts after the then-arm on its
+  # own line. Parsing the extracted text standalone fails with "unexpected else".
+  # Retry wrapped in `(...)` to restore that syntactic context.
+  paren_wrapped <- FALSE
+  if (inherits(parsed, "error")) {
+    parsed <- tryCatch(
+      parse(text = paste0("(", src$text, ")"), keep.source = TRUE),
+      error = function(e) stop(conditionMessage(e), call. = FALSE)
+    )
+    paren_wrapped <- TRUE
+  }
+
   pd <- utils::getParseData(parsed)
 
   if (is.null(pd) || nrow(pd) == 0L) {
@@ -605,6 +654,18 @@ impute_srcrefs <- function(fn, wrap_call_args = TRUE) {
   }
 
   root_id <- root_rows$id[[1L]]
+
+  if (paren_wrapped) {
+    # The outer node is the `(...)` wrapper; descend to the actual function
+    # expression. The prepended `(` shifts all line-1 columns in parse data
+    # right by 1, so reduce first_col_offset to compensate.
+    inner_rows <- expr_rows[expr_rows$parent == root_id, , drop = FALSE]
+    if (nrow(inner_rows) != 1L) {
+      stop("Expected exactly one expression inside paren wrapper", call. = FALSE)
+    }
+    root_id <- inner_rows$id[[1L]]
+    src$first_col_offset <- src$first_col_offset - 1L
+  }
 
   # Shared parse context used by the recursive walker.
   ctx <- list(
